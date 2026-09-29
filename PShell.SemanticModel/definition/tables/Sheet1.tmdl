@@ -1,0 +1,111 @@
+table Sheet1
+	lineageTag: 26fcf87f-11df-4a84-bfff-10bb6d0fc0c4
+
+	/// Client. L'ordre de l'axe est pilote par la mesure Rang dans le visuel, pas par une colonne de tri.
+	column Client
+		dataType: string
+		lineageTag: 3d29d053-ff60-44fb-be91-3d05d0090e93
+		summarizeBy: none
+		sourceColumn: Customer
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Chiffre d'affaires du client, en millions USD.
+	column 'Rev (mUSD)'
+		dataType: double
+		formatString: #,##0.00
+		lineageTag: 18bfd1c9-e059-4d37-9b5d-dfbf3a62bf41
+		summarizeBy: sum
+		sourceColumn: Rev (mUSD)
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Regroupement client (Top clients / Others).
+	column '_2 Customer Group'
+		dataType: string
+		lineageTag: d8dc3d1c-13fa-4a14-a2c0-37eb09509848
+		summarizeBy: none
+		sourceColumn: _2 Customer Group
+		sortByColumn: '_3 Customer Group'
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Ordre de tri du regroupement client (masque).
+	column '_3 Customer Group'
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 6e163f81-8bfd-40e5-8f12-1cd48a6df600
+		summarizeBy: none
+		sourceColumn: _3 Customer Group
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Classe ABC figee (seuils 80 / 95%) · utilisable comme axe, segment ou groupe de matrice.
+	column 'ABC Class (static)' =
+			VAR _Rev = Sheet1[Rev (mUSD)]
+			VAR _Cust = Sheet1[Client]
+			VAR _Total = SUMX ( ALL ( Sheet1 ), Sheet1[Rev (mUSD)] )
+			VAR _Prior =
+			    SUMX (
+			        FILTER (
+			            ALL ( Sheet1 ),
+			            Sheet1[Rev (mUSD)] > _Rev
+			                || ( Sheet1[Rev (mUSD)] = _Rev && Sheet1[Client] < _Cust )
+			        ),
+			        Sheet1[Rev (mUSD)]
+			    )
+			VAR _P = DIVIDE ( _Prior, _Total )
+			RETURN
+			    SWITCH ( TRUE (), _P < 0.80, "A", _P < 0.95, "B", "C" )
+		lineageTag: bc0b1d1c-de10-4901-828e-a51b837ef760
+		summarizeBy: none
+
+	/// Rang fige par CA decroissant · sert de colonne de tri pour l'axe Client.
+	column 'Rank (static)' =
+			VAR _Rev = Sheet1[Rev (mUSD)]
+			VAR _Cust = Sheet1[Client]
+			RETURN
+			    COUNTROWS (
+			        FILTER (
+			            ALL ( Sheet1 ),
+			            Sheet1[Rev (mUSD)] > _Rev
+			                || ( Sheet1[Rev (mUSD)] = _Rev && Sheet1[Client] <= _Cust )
+			        )
+			    )
+		dataType: int64
+		formatString: 0
+		lineageTag: 45386169-8da7-4616-8362-4b591df10b6d
+		summarizeBy: none
+
+	/// Ordre de tri de l'axe Client (CA decroissant). Ne reference que le CA : pas de dependance circulaire.
+	column Ordre = RANKX ( ALL ( Sheet1[Rev (mUSD)] ), Sheet1[Rev (mUSD)], , DESC, DENSE )
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 6c49d2c0-1b4f-4308-9703-66fbfe069a7d
+		summarizeBy: none
+
+	/// Libelle d'axe : nom du client suivi de sa part du CA. Trie par Ordre.
+	column 'Client et part' = Sheet1[Client] & "  ·  " & FORMAT ( DIVIDE ( Sheet1[Rev (mUSD)], SUMX ( ALL ( Sheet1 ), Sheet1[Rev (mUSD)] ) ), "0%" )
+		lineageTag: 02907923-7df8-481f-ad31-da88a7ce36df
+		summarizeBy: none
+		sortByColumn: Ordre
+
+	partition Sheet1 = m
+		mode: import
+		source =
+				let
+				    Source = Excel.Workbook(File.Contents(DataFolder & "\portefeuille-clients.xlsx"), null, true),
+				    Sheet1_Sheet = Source{[Item="Sheet1",Kind="Sheet"]}[Data],
+				    #"En-têtes promus" = Table.PromoteHeaders(Sheet1_Sheet, [PromoteAllScalars=true]),
+				    #"Type modifié" = Table.TransformColumnTypes(#"En-têtes promus",{{"Customer", type text}, {"Rev (mUSD)", type number}, {"_2 Customer Group", type text}, {"_3 Customer Group", Int64.Type}})
+				in
+				    #"Type modifié"
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

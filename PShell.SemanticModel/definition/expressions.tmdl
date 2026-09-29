@@ -1,0 +1,7 @@
+/// Dossier contenant portefeuille-clients.xlsx. A renseigner apres un clone.
+expression DataFolder = "C:\chemin\vers\le\clone\data" meta [IsParameterQuery = true, Type = "Text", IsParameterQueryRequired = true]
+	lineageTag: 8f2c41a7-5d3e-4b90-a6c1-2e7f0b9d4a35
+
+	annotation PBI_ResultType = Text
+
+	annotation PBI_NavigationStepName = Navigation

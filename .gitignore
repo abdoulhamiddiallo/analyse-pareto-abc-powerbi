@@ -1,0 +1,12 @@
+# Etat local de Power BI, jamais versionne
+.pbi/
+*.abf
+localSettings.json
+
+# Sortie de Power BI Desktop
+*.pbix
+
+# Bruit systeme
+Thumbs.db
+.DS_Store
+~$*.xlsx

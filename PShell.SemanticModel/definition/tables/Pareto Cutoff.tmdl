@@ -1,0 +1,39 @@
+/// Parametre what-if : seuil de concentration Pareto (50% a 100%, pas de 1%).
+table 'Pareto Cutoff'
+	lineageTag: 3f6231ae-a3d9-4435-a8ec-ceb200254001
+
+	/// Seuil de concentration selectionne (slicer). 50% a 100%, pas de 1%.
+	column Cutoff
+		isHidden
+		formatString: 0 %
+		lineageTag: 2e913bf6-dbc0-4e3b-a30e-5c30359769ee
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Cutoff]
+
+	column Ordre
+		isHidden
+		formatString: 0
+		lineageTag: f9c95c62-75e0-445e-b226-dc26e402d5b5
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Ordre]
+
+	/// Libelle du seuil affiche dans le segment.
+	column Seuil
+		lineageTag: d6901f8f-80a8-4eab-9e4c-f88c0fa61c47
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Seuil]
+		sortByColumn: Ordre
+
+	partition 'Pareto Cutoff' = calculated
+		mode: import
+		source =
+				SELECTCOLUMNS (
+				    { 70, 80, 85, 90 },
+				    "Ordre", [Value],
+				    "Cutoff", CONVERT ( DIVIDE ( [Value], 100 ), CURRENCY ),
+				    "Seuil", FORMAT ( DIVIDE ( [Value], 100 ), "0 %" )
+				)
+

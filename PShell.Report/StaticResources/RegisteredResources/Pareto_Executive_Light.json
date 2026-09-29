@@ -1,0 +1,45 @@
+{
+  "name": "Pareto Executive Light",
+  "dataColors": [
+    "#9DC3E6",
+    "#D9D9D9",
+    "#2E3192",
+    "#8C8C8C",
+    "#16324F",
+    "#4A87C7",
+    "#C77B22",
+    "#1E7A6B"
+  ],
+  "foreground": "#1F2937",
+  "foregroundNeutralSecondary": "#5A6472",
+  "foregroundNeutralTertiary": "#9AA3AE",
+  "background": "#FFFFFF",
+  "backgroundLight": "#F2F4F7",
+  "backgroundNeutral": "#E4E8EE",
+  "tableAccent": "#2E3192",
+  "good": "#1E7A6B",
+  "neutral": "#C77B22",
+  "bad": "#B04A3F",
+  "textClasses": {
+    "title": {
+      "fontFace": "Segoe UI Semibold",
+      "fontSize": 13,
+      "color": "#1F2937"
+    },
+    "header": {
+      "fontFace": "Segoe UI Semibold",
+      "fontSize": 11,
+      "color": "#1F2937"
+    },
+    "label": {
+      "fontFace": "Segoe UI",
+      "fontSize": 9,
+      "color": "#5A6472"
+    },
+    "callout": {
+      "fontFace": "Segoe UI Semibold",
+      "fontSize": 30,
+      "color": "#2E3192"
+    }
+  }
+}

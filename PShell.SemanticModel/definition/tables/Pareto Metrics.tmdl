@@ -1,0 +1,677 @@
+/// Table hote des mesures Pareto.
+table 'Pareto Metrics'
+	lineageTag: 19e6944a-b250-4b40-9c54-83dc04cd0f90
+
+	/// Chiffre d'affaires en millions USD.
+	measure Revenue = SUM ( Sheet1[Rev (mUSD)] )
+		formatString: #,##0.00
+		displayFolder: 01 Core
+		lineageTag: c44f3b6d-0c8c-41a3-b41f-ea9d479356ca
+
+	/// CA total sur le perimetre selectionne (axe Client neutralise). Denominateur de tous les %.
+	measure 'Revenue Total' = CALCULATE ( [Revenue], ALL ( Sheet1 ) )
+		formatString: #,##0.00
+		displayFolder: 01 Core
+		lineageTag: 21a82403-ea96-41cf-9d22-b44333b9ebda
+
+	/// Nombre de clients dans le perimetre selectionne.
+	measure Customers = CALCULATE ( DISTINCTCOUNT ( Sheet1[Client] ), ALL ( Sheet1 ) )
+		formatString: #,##0
+		displayFolder: 01 Core
+		lineageTag: d3110831-10d8-48cb-8495-e6a8c7835389
+
+	/// Part du client dans le CA total.
+	measure 'Revenue %' = DIVIDE ( [Revenue], [Revenue Total] )
+		formatString: 0.0%
+		displayFolder: 01 Core
+		lineageTag: 5700e957-174f-4380-8fb4-0ba9a4dc7b14
+
+	/// CA moyen par client.
+	measure 'Revenue per Customer' = DIVIDE ( [Revenue Total], [Customers] )
+		formatString: #,##0.00
+		displayFolder: 01 Core
+		lineageTag: 3eadc40e-afec-4923-9fed-861d0ffdd264
+
+	/// Rang du client par CA decroissant. Departage deterministe par nom en cas d'ex aequo.
+	measure 'Customer Rank' =
+			VAR _CurRev = [Revenue]
+			VAR _CurCust = SELECTEDVALUE ( Sheet1[Client] )
+			VAR _Base =
+			    CALCULATETABLE (
+			        ADDCOLUMNS ( VALUES ( Sheet1[Client] ), "@Rev", [Revenue] ),
+			        ALL ( Sheet1 )
+			    )
+			RETURN
+			    IF (
+			        NOT ISBLANK ( _CurRev ) && NOT ISBLANK ( _CurCust ),
+			        COUNTROWS (
+			            FILTER (
+			                _Base,
+			                [@Rev] > _CurRev || ( [@Rev] = _CurRev && Sheet1[Client] <= _CurCust )
+			            )
+			        )
+			    )
+		formatString: #,##0
+		displayFolder: 02 Pareto
+		lineageTag: 33f291a9-6532-414b-8cdc-a4b3ddc9555f
+
+	/// CA cumule du rang 1 jusqu'au client courant.
+	measure 'Cumulative Revenue' =
+			VAR _CurRev = [Revenue]
+			VAR _CurCust = SELECTEDVALUE ( Sheet1[Client] )
+			VAR _Base =
+			    CALCULATETABLE (
+			        ADDCOLUMNS ( VALUES ( Sheet1[Client] ), "@Rev", [Revenue] ),
+			        ALL ( Sheet1 )
+			    )
+			RETURN
+			    IF (
+			        NOT ISBLANK ( _CurRev ) && NOT ISBLANK ( _CurCust ),
+			        SUMX (
+			            FILTER (
+			                _Base,
+			                [@Rev] > _CurRev || ( [@Rev] = _CurRev && Sheet1[Client] <= _CurCust )
+			            ),
+			            [@Rev]
+			        )
+			    )
+		formatString: #,##0.00
+		displayFolder: 02 Pareto
+		lineageTag: 80522162-688f-4ec3-b320-538169517e4b
+
+	/// Courbe de Pareto : part cumulee du CA.
+	measure 'Cumulative Revenue %' = DIVIDE ( [Cumulative Revenue], [Revenue Total] )
+		formatString: 0.0%
+		displayFolder: 02 Pareto
+		lineageTag: a4f82633-cf8d-495b-a7d2-6ebc3b19da90
+
+	/// Part cumulee des clients (axe X normalise de la courbe de Lorenz).
+	measure 'Cumulative Customers %' = DIVIDE ( [Customer Rank], [Customers] )
+		formatString: 0.0%
+		displayFolder: 02 Pareto
+		lineageTag: fabb6337-bf72-4d2a-8de1-ade47249f0c1
+
+	/// Seuil pilote par le curseur. Sans selection : 80 % par defaut. Avec une plage : la borne haute.
+	measure 'Pareto Cutoff %' = SELECTEDVALUE ( 'Pareto Cutoff'[Cutoff], 0.80 )
+		formatString: 0 %
+		displayFolder: 03 Cutoff & Segments
+		lineageTag: 40240135-4ba2-4270-a5ad-8690d8a39494
+
+	/// Nombre minimal de clients necessaires pour atteindre le seuil de CA cumule.
+	measure 'Vital Few Customers' =
+			VAR _Cut = [Pareto Cutoff %]
+			VAR _Total = [Revenue Total]
+			VAR _Base =
+			    CALCULATETABLE (
+			        ADDCOLUMNS ( VALUES ( Sheet1[Client] ), "@Rev", [Revenue] ),
+			        ALL ( Sheet1 )
+			    )
+			VAR _WithPrior =
+			    ADDCOLUMNS (
+			        _Base,
+			        "@Prior",
+			        VAR _R = [@Rev]
+			        VAR _C = Sheet1[Client]
+			        RETURN
+			            SUMX (
+			                FILTER ( _Base, [@Rev] > _R || ( [@Rev] = _R && Sheet1[Client] < _C ) ),
+			                [@Rev]
+			            )
+			    )
+			RETURN
+			    COUNTROWS ( FILTER ( _WithPrior, DIVIDE ( [@Prior], _Total ) < _Cut ) ) + 0
+		formatString: #,##0
+		displayFolder: 03 Cutoff & Segments
+		lineageTag: 8e805ce4-987d-41f4-9cf1-3eb00d46afe1
+
+	/// CA genere par les clients du segment 'Vital few'.
+	measure 'Vital Few Revenue' =
+			VAR _N = [Vital Few Customers]
+			VAR _Base =
+			    CALCULATETABLE (
+			        ADDCOLUMNS ( VALUES ( Sheet1[Client] ), "@Rev", [Revenue] ),
+			        ALL ( Sheet1 )
+			    )
+			VAR _WithRank =
+			    ADDCOLUMNS (
+			        _Base,
+			        "@Rank",
+			        VAR _R = [@Rev]
+			        VAR _C = Sheet1[Client]
+			        RETURN
+			            COUNTROWS (
+			                FILTER ( _Base, [@Rev] > _R || ( [@Rev] = _R && Sheet1[Client] <= _C ) )
+			            )
+			    )
+			RETURN
+			    SUMX ( FILTER ( _WithRank, [@Rank] <= _N ), [@Rev] )
+		formatString: #,##0.00
+		displayFolder: 03 Cutoff & Segments
+		lineageTag: 2ea53a1b-2a0b-4ca9-801c-8be3173b6556
+
+	/// Part reelle du CA couverte par le segment 'Vital few'.
+	measure 'Vital Few Revenue %' = DIVIDE ( [Vital Few Revenue], [Revenue Total] )
+		formatString: 0.0%
+		displayFolder: 03 Cutoff & Segments
+		lineageTag: 4d3990aa-1941-480e-a769-d9a75133aa79
+
+	/// Part des clients que represente le segment 'Vital few'.
+	measure 'Vital Few Customers %' = DIVIDE ( [Vital Few Customers], [Customers] )
+		formatString: 0.0%
+		displayFolder: 03 Cutoff & Segments
+		lineageTag: d396f460-cd86-45cb-bbb9-552186d06323
+
+	/// Helper 1/0 : le client courant appartient-il au segment 'Vital few'.
+	measure 'Is Vital Few' =
+			VAR _Rank = [Customer Rank]
+			RETURN
+			    IF ( NOT ISBLANK ( _Rank ) && _Rank <= [Vital Few Customers], 1, 0 )
+		formatString: 0
+		isHidden
+		displayFolder: 03 Cutoff & Segments
+		lineageTag: 49921a84-b8f2-4f6d-8a1d-5b97134b5ec9
+
+	/// Libelle du segment : Vital few / Trivial many.
+	measure 'Pareto Segment' = IF ( ISBLANK ( [Customer Rank] ), BLANK (), IF ( [Is Vital Few] = 1, "Segment vital", "Queue longue" ) )
+		displayFolder: 03 Cutoff & Segments
+		lineageTag: 45bf6f05-1218-4215-8593-c8b2269371d6
+
+	/// Classification ABC standard sur le CA cumule : A <= 80%, B <= 95%, C au-dela.
+	measure 'ABC Class' =
+			VAR _Cum = [Cumulative Revenue %]
+			VAR _Prior = _Cum - [Revenue %]
+			RETURN
+			    SWITCH (
+			        TRUE (),
+			        ISBLANK ( _Cum ), BLANK (),
+			        _Prior < 0.80, "A",
+			        _Prior < 0.95, "B",
+			        "C"
+			    )
+		displayFolder: 03 Cutoff & Segments
+		lineageTag: d63712bc-2621-4253-b112-efe67f151c55
+
+	/// Libelle long de la classe ABC pour les info-bulles.
+	measure 'ABC Class Label' =
+			SWITCH (
+			    [ABC Class],
+			    "A", "A · Stratégiques (0-80 % du CA)",
+			    "B", "B · Intermédiaires (80-95 % du CA)",
+			    "C", "C · Queue longue (95-100 % du CA)",
+			    BLANK ()
+			)
+		displayFolder: 03 Cutoff & Segments
+		lineageTag: 680ded34-0173-4d6e-94fd-b5806572034a
+
+	/// Part du CA detenue par le 1er client.
+	measure 'Top 1 Share' =
+			VAR _Base =
+			    CALCULATETABLE ( ADDCOLUMNS ( VALUES ( Sheet1[Client] ), "@Rev", [Revenue] ), ALL ( Sheet1 ) )
+			RETURN
+			    DIVIDE ( SUMX ( TOPN ( 1, _Base, [@Rev], DESC ), [@Rev] ), [Revenue Total] )
+		formatString: 0.0%
+		displayFolder: 04 Concentration
+		lineageTag: 32bbb981-a3d0-4fc0-9e25-bf2f45ab97f4
+
+	/// Part du CA detenue par les 3 premiers clients.
+	measure 'Top 3 Share' =
+			VAR _Base =
+			    CALCULATETABLE ( ADDCOLUMNS ( VALUES ( Sheet1[Client] ), "@Rev", [Revenue] ), ALL ( Sheet1 ) )
+			RETURN
+			    DIVIDE ( SUMX ( TOPN ( 3, _Base, [@Rev], DESC ), [@Rev] ), [Revenue Total] )
+		formatString: 0.0%
+		displayFolder: 04 Concentration
+		lineageTag: 84af0ee5-e250-441a-be4c-da8a22f08dc4
+
+	/// Part du CA detenue par les 5 premiers clients.
+	measure 'Top 5 Share' =
+			VAR _Base =
+			    CALCULATETABLE ( ADDCOLUMNS ( VALUES ( Sheet1[Client] ), "@Rev", [Revenue] ), ALL ( Sheet1 ) )
+			RETURN
+			    DIVIDE ( SUMX ( TOPN ( 5, _Base, [@Rev], DESC ), [@Rev] ), [Revenue Total] )
+		formatString: 0.0%
+		displayFolder: 04 Concentration
+		lineageTag: fa1e91e9-9ea5-479e-89b7-1605dc885a65
+
+	/// Part du CA detenue par les 10 premiers clients.
+	measure 'Top 10 Share' =
+			VAR _Base =
+			    CALCULATETABLE ( ADDCOLUMNS ( VALUES ( Sheet1[Client] ), "@Rev", [Revenue] ), ALL ( Sheet1 ) )
+			RETURN
+			    DIVIDE ( SUMX ( TOPN ( 10, _Base, [@Rev], DESC ), [@Rev] ), [Revenue Total] )
+		formatString: 0.0%
+		displayFolder: 04 Concentration
+		lineageTag: 2b7bd595-8e44-405d-ae4f-98c2fb16bdf4
+
+	/// Nombre de clients necessaires pour atteindre 80% du CA (regle de Pareto classique).
+	measure 'Customers to 80%' =
+			VAR _Total = [Revenue Total]
+			VAR _Base =
+			    CALCULATETABLE ( ADDCOLUMNS ( VALUES ( Sheet1[Client] ), "@Rev", [Revenue] ), ALL ( Sheet1 ) )
+			VAR _WithPrior =
+			    ADDCOLUMNS (
+			        _Base,
+			        "@Prior",
+			        VAR _R = [@Rev]
+			        VAR _C = Sheet1[Client]
+			        RETURN
+			            SUMX ( FILTER ( _Base, [@Rev] > _R || ( [@Rev] = _R && Sheet1[Client] < _C ) ), [@Rev] )
+			    )
+			RETURN
+			    COUNTROWS ( FILTER ( _WithPrior, DIVIDE ( [@Prior], _Total ) < 0.80 ) ) + 0
+		formatString: #,##0
+		displayFolder: 04 Concentration
+		lineageTag: f173dda3-b992-42c4-a122-ad5384fda4c9
+
+	/// Part des clients necessaires pour atteindre 80% du CA.
+	measure 'Customers to 80% %' = DIVIDE ( [Customers to 80%], [Customers] )
+		formatString: 0.0%
+		displayFolder: 04 Concentration
+		lineageTag: 9395a22e-5ed1-4a56-9385-728dc116858c
+
+	/// Ratio de Pareto observe, format '80 / xx%'.
+	measure 'Pareto Ratio Label' = "80 / " & FORMAT ( [Customers to 80% %], "0 %" )
+		displayFolder: 04 Concentration
+		lineageTag: eb5f64f5-d70e-4c3a-9746-459470ba0136
+
+	/// Indice de Herfindahl-Hirschman (0-10 000). Mesure la concentration du portefeuille.
+	measure HHI =
+			VAR _Total = [Revenue Total]
+			VAR _Base =
+			    CALCULATETABLE ( ADDCOLUMNS ( VALUES ( Sheet1[Client] ), "@Rev", [Revenue] ), ALL ( Sheet1 ) )
+			RETURN
+			    SUMX ( _Base, DIVIDE ( [@Rev], _Total ) ^ 2 ) * 10000
+		formatString: #,##0
+		displayFolder: 04 Concentration
+		lineageTag: 996945ec-e5b9-4601-a73b-1a99678e968a
+
+	/// Lecture du HHI selon les seuils antitrust usuels.
+	measure 'HHI Verdict' =
+			VAR _H = [HHI]
+			RETURN
+			    SWITCH (
+			        TRUE (),
+			        ISBLANK ( _H ), BLANK (),
+			        _H < 1500, "portefeuille diversifié",
+			        _H < 2500, "concentration modérée",
+			        "forte concentration"
+			    )
+		displayFolder: 04 Concentration
+		lineageTag: a6d3a4b2-7b9c-446f-bbea-04cb4da0428d
+
+	/// Coefficient de Gini du CA (0 = parfaitement reparti, 1 = totalement concentre).
+	measure 'Gini Coefficient' =
+			VAR _Total = [Revenue Total]
+			VAR _Base =
+			    CALCULATETABLE ( ADDCOLUMNS ( VALUES ( Sheet1[Client] ), "@Rev", [Revenue] ), ALL ( Sheet1 ) )
+			VAR _N = COUNTROWS ( _Base )
+			VAR _WithRankAsc =
+			    ADDCOLUMNS (
+			        _Base,
+			        "@RankAsc",
+			        VAR _R = [@Rev]
+			        VAR _C = Sheet1[Client]
+			        RETURN
+			            COUNTROWS ( FILTER ( _Base, [@Rev] < _R || ( [@Rev] = _R && Sheet1[Client] <= _C ) ) )
+			    )
+			RETURN
+			    IF ( _N > 1, DIVIDE ( SUMX ( _WithRankAsc, ( 2 * [@RankAsc] - _N - 1 ) * [@Rev] ), _N * _Total ) )
+		formatString: 0.000
+		displayFolder: 04 Concentration
+		lineageTag: a5b0e78c-9400-43f1-9db9-2d8343c3b89c
+
+	/// Diagnostic synthetique du risque de concentration client.
+	measure 'Concentration Verdict' =
+			VAR _G = [Gini Coefficient]
+			VAR _T3 = [Top 3 Share]
+			RETURN
+			    SWITCH (
+			        TRUE (),
+			        ISBLANK ( _G ), BLANK (),
+			        _T3 >= 0.50, "Risque élevé : les 3 premiers clients pèsent " & FORMAT ( _T3, "0 %" ) & " du CA",
+			        _G >= 0.45, "Risque modéré : distribution nettement inégale (Gini " & FORMAT ( _G, "0.00" ) & ")",
+			        "Risque maîtrisé : portefeuille relativement équilibré (Gini " & FORMAT ( _G, "0.00" ) & ")"
+			    )
+		displayFolder: 04 Concentration
+		lineageTag: 3c20b87c-84ca-48b2-958a-b345c73c12cd
+
+	/// Couleur conditionnelle des barres : navy pour le segment vital, gris acier pour la queue longue.
+	measure 'Color - Bar' = IF ( [Is Vital Few] = 1, "#16324F", "#C9D4E2" )
+		displayFolder: 05 Formatting
+		lineageTag: ad9b122b-7332-4d58-a654-f2908633a20e
+
+	/// Couleur conditionnelle des barres selon la classe ABC.
+	measure 'Color - Bar ABC' = SWITCH ( [ABC Class], "A", "#16324F", "B", "#4A87C7", "C", "#C9D4E2", "#E4E9F0" )
+		displayFolder: 05 Formatting
+		lineageTag: c46cb119-5c9f-4987-b01e-1b19eb560e71
+
+	/// Couleur des etiquettes de donnees : blanc sur barre foncee, gris ardoise sinon.
+	measure 'Color - Data Label' = IF ( [Is Vital Few] = 1, "#FFFFFF", "#5A6472" )
+		displayFolder: 05 Formatting
+		lineageTag: f34f6c92-397c-4c85-8602-d92d48acee90
+
+	/// Couleur d'accent du KPI de concentration : ambre si risque eleve, teal sinon.
+	measure 'Color - KPI Accent' = IF ( [Top 3 Share] >= 0.50, "#C77B22", "#1E7A6B" )
+		displayFolder: 05 Formatting
+		lineageTag: 50b23ca0-407e-4851-8ac1-640470ce74e9
+
+	/// Etiquette de barre sur deux lignes : valeur puis part du CA.
+	measure 'Bar Label' =
+			IF (
+			    NOT ISBLANK ( [Revenue] ),
+			    FORMAT ( [Revenue], "0.00" ) & UNICHAR ( 10 ) & FORMAT ( [Revenue %], "0%" )
+			)
+		displayFolder: 05 Formatting
+		lineageTag: 9861aa73-c4b4-4b24-a6d8-40a81439019c
+
+	/// Valeur a utiliser comme ligne constante sur l'axe secondaire (courbe cumulee).
+	measure 'Cutoff Line %' = [Pareto Cutoff %]
+		formatString: 0%
+		displayFolder: 05 Formatting
+		lineageTag: 9f69d3aa-ca1a-40b2-abb8-0dbb4c5dac1e
+
+	/// N'affiche la valeur cumulee que sur le client pivot, pour materialiser le point de bascule.
+	measure 'Cutoff Marker' = IF ( [Customer Rank] = [Vital Few Customers], [Cumulative Revenue %] )
+		formatString: 0.0%
+		displayFolder: 05 Formatting
+		lineageTag: 9ea2c4b7-afc0-4101-b72b-49286298057b
+
+	/// Annotation affichee au point de bascule du Pareto.
+	measure 'Cutoff Callout' =
+			IF (
+			    [Customer Rank] = [Vital Few Customers],
+			    "Cutoff " & FORMAT ( [Pareto Cutoff %], "0%" ) & UNICHAR ( 10 ) & FORMAT ( [Cumulative Revenue], "0.00" ) & " mUSD"
+			)
+		displayFolder: 05 Formatting
+		lineageTag: 998e165c-2432-45fa-89af-f75af89a73a8
+
+	/// Titre dynamique du graphique de Pareto.
+	measure 'Title - Pareto Chart' = "Analyse du chiffre d'affaires par client"
+		displayFolder: 06 Dynamic Titles
+		lineageTag: 4808659d-dfb4-479d-8706-43f1198deb45
+
+	/// Sous-titre dynamique du graphique de Pareto.
+	measure 'Subtitle - Pareto Chart' = "CA en mUSD  |  CA cumulé en %  ·  seuil piloté à " & FORMAT ( [Pareto Cutoff %], "0 %" ) & "  ·  ratio observé " & [Pareto Ratio Label]
+		displayFolder: 06 Dynamic Titles
+		lineageTag: f97a786e-e64d-4774-be5e-e72058227be4
+
+	/// Titre dynamique du tableau de detail.
+	measure 'Title - Breakdown' = "Détail par client"
+		displayFolder: 06 Dynamic Titles
+		lineageTag: 83b09a75-49e3-4967-b948-6b0b8337ab61
+
+	/// Phrase choc pour la carte principale.
+	measure 'KPI - Headline' = FORMAT ( [Vital Few Revenue %], "0%" ) & " du CA"
+		displayFolder: 06 Dynamic Titles
+		lineageTag: 10410947-dacf-468c-89e2-a04e6dd90289
+
+	/// Legende de la carte principale.
+	measure 'KPI - Headline Sub' = "genere par " & FORMAT ( [Vital Few Customers], "0" ) & " clients (" & FORMAT ( [Vital Few Customers %], "0%" ) & " du portefeuille)"
+		displayFolder: 06 Dynamic Titles
+		lineageTag: 27482b2b-3f7e-4758-a48b-8f365bb4cb2e
+
+	/// Synthese executive auto-redigee, a poser dans une carte multi-lignes.
+	measure 'Narrative - Executive Summary' =
+			VAR _Cut = [Pareto Cutoff %]
+			VAR _N = [Vital Few Customers]
+			VAR _NPct = [Vital Few Customers %]
+			VAR _RevPct = [Vital Few Revenue %]
+			VAR _Rev = [Vital Few Revenue]
+			VAR _Total = [Revenue Total]
+			VAR _Top3 = [Top 3 Share]
+			VAR _G = [Gini Coefficient]
+			RETURN
+			    IF (
+			        ISBLANK ( _Total ),
+			        BLANK (),
+			        "Sur " & FORMAT ( [Customers], "0" ) & " clients pesant " & FORMAT ( _Total, "#,##0.00" ) & " mUSD, "
+			            & FORMAT ( _N, "0" ) & " clients (" & FORMAT ( _NPct, "0%" ) & " du portefeuille) generent "
+			            & FORMAT ( _Rev, "#,##0.00" ) & " mUSD, soit " & FORMAT ( _RevPct, "0%" ) & " du chiffre d'affaires."
+			            & UNICHAR ( 10 ) & UNICHAR ( 10 )
+			            & "Ratio de Pareto observe : " & [Pareto Ratio Label] & " (la regle theorique serait 80 / 20)."
+			            & UNICHAR ( 10 )
+			            & "Les 3 premiers clients concentrent " & FORMAT ( _Top3, "0%" ) & " du CA · HHI " & FORMAT ( [HHI], "#,##0" ) & " (" & [HHI Verdict] & "), Gini " & FORMAT ( _G, "0.00" ) & "."
+			            & UNICHAR ( 10 ) & UNICHAR ( 10 )
+			            & [Concentration Verdict] & "."
+			    )
+		displayFolder: 06 Dynamic Titles
+		lineageTag: 5113ca56-5fe8-40eb-8101-73b4f70f703f
+
+	/// Texte d'info-bulle enrichi au survol d'un client.
+	measure 'Tooltip - Customer Story' =
+			VAR _C = SELECTEDVALUE ( Sheet1[Client] )
+			RETURN
+			    IF (
+			        ISBLANK ( _C ),
+			        BLANK (),
+			        _C & " · rang " & FORMAT ( [Customer Rank], "0" ) & " sur " & FORMAT ( [Customers], "0" )
+			            & UNICHAR ( 10 ) & FORMAT ( [Revenue], "#,##0.00" ) & " mUSD (" & FORMAT ( [Revenue %], "0.0%" ) & " du CA)"
+			            & UNICHAR ( 10 ) & "CA cumule a ce rang : " & FORMAT ( [Cumulative Revenue %], "0.0%" )
+			            & UNICHAR ( 10 ) & "Segment : " & [Pareto Segment] & " • Classe " & [ABC Class]
+			    )
+		displayFolder: 06 Dynamic Titles
+		lineageTag: ab73ee56-a208-43bd-9cc6-e8d68f642f1a
+
+	/// Nombre de clients dans le contexte de filtre courant (utilisable par classe ABC).
+	measure 'Customer Count' = DISTINCTCOUNT ( Sheet1[Client] )
+		formatString: #,##0
+		displayFolder: 01 Core
+		lineageTag: 0a522a8a-16c9-435b-8993-dc12cb7ac025
+
+	/// CA de tout le portefeuille selectionne, tous filtres de Sheet1 neutralises.
+	measure 'Revenue Total (Portfolio)' = CALCULATE ( [Revenue], ALL ( Sheet1 ) )
+		formatString: #,##0.00
+		isHidden
+		displayFolder: 01 Core
+		lineageTag: ade57495-5fff-48d0-a80a-b10c372fa19b
+
+	/// Part du CA total du portefeuille · reste correct dans une matrice groupee (ABC, groupe client).
+	measure 'Revenue % of Portfolio' = DIVIDE ( [Revenue], [Revenue Total] )
+		formatString: 0.0%
+		displayFolder: 01 Core
+		lineageTag: f9e1bf5c-783d-4a64-96d0-15135e24fef8
+
+	/// Part du CA detenue par les N premiers clients, N venant de la table 'Top N Buckets'.
+	measure 'Top N Share' =
+			VAR _N = SELECTEDVALUE ( 'Top N Buckets'[N] )
+			VAR _Base =
+			    CALCULATETABLE ( ADDCOLUMNS ( VALUES ( Sheet1[Client] ), "@Rev", [Revenue] ), ALL ( Sheet1 ) )
+			RETURN
+			    IF (
+			        NOT ISBLANK ( _N ),
+			        DIVIDE ( SUMX ( TOPN ( _N, _Base, [@Rev], DESC ), [@Rev] ), [Revenue Total] )
+			    )
+		formatString: 0.0%
+		displayFolder: 04 Concentration
+		lineageTag: 971c8cdf-6634-4af6-88fc-db753a9bb5ef
+
+	/// Legende de la carte Portefeuille.
+	measure 'KPI - Portfolio Sub' = FORMAT ( [Customers], "0" ) & " clients actifs  ·  " & FORMAT ( [Revenue per Customer], "#,##0.00" ) & " mUSD en moyenne"
+		displayFolder: 06 Dynamic Titles
+		lineageTag: 4a332a0a-d261-4698-8911-b72d06af3dc8
+
+	/// Legende de la carte Ratio de Pareto.
+	measure 'KPI - Ratio Sub' = "observé · la règle théorique serait 80 / 20"
+		displayFolder: 06 Dynamic Titles
+		lineageTag: f1c0de99-6177-48f8-aaa1-8fb95991989b
+
+	/// Legende de la carte Concentration.
+	measure 'KPI - Concentration Sub' = "HHI  ·  Gini " & FORMAT ( [Gini Coefficient], "0.00" ) & "  ·  " & [HHI Verdict]
+		displayFolder: 06 Dynamic Titles
+		lineageTag: ab6e53b7-b000-4394-8cc0-634a1c6378da
+
+	/// Version compacte de la synthese, calibree pour la carte 384 x 192 px.
+	measure 'Narrative - Panel' =
+			VAR _Total = [Revenue Total]
+			RETURN
+			    IF (
+			        ISBLANK ( _Total ),
+			        BLANK (),
+			        "Sur " & FORMAT ( [Customers], "0" ) & " clients pesant " & FORMAT ( _Total, "#,##0.00" ) & " mUSD, "
+			            & FORMAT ( [Vital Few Customers], "0" ) & " clients (" & FORMAT ( [Vital Few Customers %], "0 %" ) & " du portefeuille) génèrent "
+			            & FORMAT ( [Vital Few Revenue], "#,##0.00" ) & " mUSD, soit " & FORMAT ( [Vital Few Revenue %], "0 %" ) & " du chiffre d'affaires."
+			            & UNICHAR ( 10 ) & UNICHAR ( 10 )
+			            & "Ratio observé " & [Pareto Ratio Label] & " contre 80 / 20 en théorie : la base est moins concentrée que le canon de Pareto."
+			            & UNICHAR ( 10 ) & UNICHAR ( 10 )
+			            & "Top 3 = " & FORMAT ( [Top 3 Share], "0 %" ) & " du CA. " & [Concentration Verdict] & "."
+			    )
+		displayFolder: 06 Dynamic Titles
+		lineageTag: 0bad9cf1-f10d-408b-8591-a9b8ee6fa55b
+
+	/// Serie de colonnes : CA des clients du segment vital (vide sinon).
+	measure 'CA segment vital' = IF ( [Is Vital Few] = 1, [Revenue] )
+		formatString: 0.00
+		displayFolder: 07 Rapport FR
+		lineageTag: 1767a4b6-0afe-4167-82c3-912ca4472581
+
+	/// Serie de colonnes : CA des clients hors segment vital (vide sinon).
+	measure 'CA queue longue' = IF ( [Is Vital Few] = 0, [Revenue] )
+		formatString: 0.00
+		displayFolder: 07 Rapport FR
+		lineageTag: a3fad7b8-14a7-4607-84a2-7b4e45128092
+
+	/// Courbe cumulee. Format vide : la courbe ne porte pas d'etiquette de donnees.
+	measure 'CA cumulé %' = [Cumulative Revenue %]
+		formatString: ;;;
+		displayFolder: 07 Rapport FR
+		lineageTag: beed1f87-4e9a-4b63-ba4e-7b9af71d285a
+
+	/// Alias francais de la ligne de seuil, pour la legende du graphique.
+	measure 'Seuil %' = [Pareto Cutoff %]
+		formatString: 0%
+		displayFolder: 07 Rapport FR
+		lineageTag: b9beb5c5-25d1-4001-9b06-9f0aa2b43520
+
+	/// Alias francais du rang.
+	measure Rang = [Customer Rank]
+		formatString: 0
+		displayFolder: 07 Rapport FR
+		lineageTag: f6dab0fc-2d7c-47f3-9d57-b004d5fc4669
+
+	/// Alias francais du CA.
+	measure 'CA mUSD' = [Revenue]
+		formatString: #,##0.00
+		displayFolder: 07 Rapport FR
+		lineageTag: a3b39ecf-1d8b-4053-8b76-c4e566f6dff9
+
+	/// Alias francais de la part du CA.
+	measure '% du CA' = [Revenue %]
+		formatString: 0.0%
+		displayFolder: 07 Rapport FR
+		lineageTag: b41cf791-e508-424a-a7b6-56e17ed74521
+
+	/// Alias francais du CA cumule.
+	measure 'CA cumulé' = [Cumulative Revenue]
+		formatString: #,##0.00
+		displayFolder: 07 Rapport FR
+		lineageTag: 3e6aca5c-fb85-49bc-b273-b6de0b87c36d
+
+	/// Alias francais du CA cumule en %.
+	measure '% cumulé' = [Cumulative Revenue %]
+		formatString: 0.0%
+		displayFolder: 07 Rapport FR
+		lineageTag: 6dc29775-6907-4e9e-b2cd-c1ce42bf3c90
+
+	/// Alias francais de la classe ABC.
+	measure Classe = [ABC Class]
+		displayFolder: 07 Rapport FR
+		lineageTag: 4afe24c2-b446-4935-9ece-7eaadd8df236
+
+	/// Grand pourcentage de la phrase d'accroche.
+	measure 'Headline %' = FORMAT ( [Vital Few Revenue %], "0 %" )
+		displayFolder: 07 Rapport FR
+		lineageTag: 46b8e2ba-fb50-4514-9cab-fb20d369a64b
+
+	/// Phrase d'accroche a droite du grand pourcentage.
+	measure 'Headline phrase' = "du CA est généré par " & FORMAT ( [Vital Few Customers], "0" ) & " clients sur " & FORMAT ( [Customers], "0" )
+		displayFolder: 07 Rapport FR
+		lineageTag: 9822cace-5583-4a39-ab13-a11008d38195
+
+	/// Bandeau de synthese sur une seule ligne, en pied du panneau gauche.
+	measure 'Bandeau concentration' =
+			VAR _Pivot =
+			    CALCULATE (
+			        MAXX (
+			            FILTER (
+			                ADDCOLUMNS ( VALUES ( Sheet1[Client] ), "@R", [Customer Rank] ),
+			                [@R] = [Vital Few Customers]
+			            ),
+			            Sheet1[Client]
+			        ),
+			        ALL ( Sheet1 )
+			    )
+			RETURN
+			    "Ratio " & [Pareto Ratio Label]
+			        & "     ·     Top 3 = " & FORMAT ( [Top 3 Share], "0 %" )
+			        & "     ·     HHI " & FORMAT ( [HHI], "#,##0" )
+			        & "     ·     Gini " & FORMAT ( [Gini Coefficient], "0.00" )
+			        & "     ·     bascule chez " & _Pivot
+		displayFolder: 07 Rapport FR
+		lineageTag: 037ef58b-62ee-4eb1-b7eb-5809d81f1a83
+
+	/// Barre de donnees textuelle. Uniquement sur les lignes client, jamais sur les sous-totaux.
+	measure Barre =
+			VAR _Max = CALCULATE ( MAX ( Sheet1[Rev (mUSD)] ), ALL ( Sheet1 ) )
+			VAR _N = ROUND ( DIVIDE ( [Revenue], _Max ) * 8, 0 )
+			RETURN
+			    IF (
+			        ISINSCOPE ( Sheet1[Client] ) && NOT ISBLANK ( [Revenue] ),
+			        REPT ( UNICHAR ( 9608 ), MAX ( _N, 1 ) )
+			    )
+		displayFolder: 07 Rapport FR
+		lineageTag: 251a8c9a-ba39-4fbd-8f85-0d956baae1e9
+
+	/// Marqueur unique au client pivot. Son etiquette sert d'annotation de bascule sur la courbe.
+	measure 'Point de bascule' = IF ( [Customer Rank] = [Vital Few Customers], [Cumulative Revenue %] )
+		formatString: 0 %
+		displayFolder: 07 Rapport FR
+		lineageTag: cde1fbdf-7c62-428d-836e-1dfb7d96eb49
+
+	/// Nom du client survole.
+	measure 'Tooltip - Client' = SELECTEDVALUE ( Sheet1[Client], "Tous les clients" )
+		displayFolder: 08 Info-bulle
+		lineageTag: 8f02cf40-5d40-4e6a-b3fd-c1963adb485e
+
+	/// Ligne de position du client dans le classement.
+	measure 'Tooltip - Position' =
+			VAR _R = [Customer Rank]
+			RETURN
+			    IF (
+			        ISBLANK ( _R ),
+			        BLANK (),
+			        "Rang " & FORMAT ( _R, "0" ) & " sur " & FORMAT ( [Customers], "0" )
+			            & "   ·   Classe " & [ABC Class]
+			            & "   ·   " & [Pareto Segment]
+			    )
+		displayFolder: 08 Info-bulle
+		lineageTag: e687b774-7922-483c-b1bf-ebccb9745c9c
+
+	/// Phrase de lecture au survol.
+	measure 'Tooltip - Verdict' =
+			VAR _R = [Customer Rank]
+			VAR _N = [Vital Few Customers]
+			RETURN
+			    IF (
+			        ISBLANK ( _R ),
+			        BLANK (),
+			        IF (
+			            _R <= _N,
+			            "Fait partie des " & FORMAT ( _N, "0" ) & " clients qui génèrent "
+			                & FORMAT ( [Vital Few Revenue %], "0 %" ) & " du chiffre d'affaires.",
+			            "Au-delà du seuil de " & FORMAT ( [Pareto Cutoff %], "0 %" ) & " : "
+			                & FORMAT ( _R - _N, "0" ) & " rang(s) après le point de bascule."
+			        )
+			    )
+		displayFolder: 08 Info-bulle
+		lineageTag: 48698fc2-606f-4c14-a1e7-eaeb07aa6ca7
+
+	column _
+		isHidden
+		lineageTag: 0ac422f0-81b5-4b58-bb58-ef083cf25ee4
+		isNameInferred
+		sourceColumn: [_]
+
+	partition 'Pareto Metrics' = calculated
+		mode: import
+		source = ROW ( "_", BLANK () )
+

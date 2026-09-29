@@ -1,0 +1,36 @@
+/// Table deconnectee : paliers de concentration Top-N.
+table 'Top N Buckets'
+	lineageTag: fff403b6-b021-4b34-b9f0-58b38da805c3
+
+	column Bucket
+		lineageTag: 988fa1cd-a446-4e34-8e90-000c57a333bb
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Bucket]
+		sortByColumn: Sort
+
+	column N
+		lineageTag: 093fa582-58b0-4d5d-b53e-1e08bbc17c91
+		isNameInferred
+		sourceColumn: [N]
+
+	column Sort
+		lineageTag: f81f6467-ab7a-48df-94d7-3c74bfcf23ee
+		isNameInferred
+		sourceColumn: [Sort]
+
+	partition 'Top N Buckets' = calculated
+		mode: import
+		source =
+				DATATABLE (
+				    "Bucket", STRING,
+				    "N", INTEGER,
+				    "Sort", INTEGER,
+				    {
+				        { "Top 1", 1, 1 },
+				        { "Top 3", 3, 2 },
+				        { "Top 5", 5, 3 },
+				        { "Top 10", 10, 4 }
+				    }
+				)
+

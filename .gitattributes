@@ -1,0 +1,14 @@
+# Power BI ecrit ses fichiers projet en CRLF.
+# On les conserve ainsi pour qu'un clone se rouvre proprement.
+*.pbip   text eol=crlf
+*.pbir   text eol=crlf
+*.pbism  text eol=crlf
+*.json   text eol=crlf
+*.tmdl   text eol=crlf
+
+# Classeur source et captures
+*.xlsx   binary
+*.png    binary
+
+# Markdown au format de la plateforme
+*.md     text

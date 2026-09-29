@@ -1,0 +1,95 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.1.0/schema.json",
+  "name": "3829366c14c45334bd0f",
+  "displayName": "Analyse de Pareto",
+  "displayOption": "FitToPage",
+  "height": 720,
+  "width": 1280,
+  "objects": {
+    "background": [
+      {
+        "properties": {
+          "color": {
+            "solid": {
+              "color": {
+                "expr": {
+                  "Literal": {
+                    "Value": "'#F2F4F7'"
+                  }
+                }
+              }
+            }
+          },
+          "transparency": {
+            "expr": {
+              "Literal": {
+                "Value": "0D"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "outspace": [
+      {
+        "properties": {
+          "color": {
+            "solid": {
+              "color": {
+                "expr": {
+                  "Literal": {
+                    "Value": "'#E6E9EE'"
+                  }
+                }
+              }
+            }
+          },
+          "transparency": {
+            "expr": {
+              "Literal": {
+                "Value": "0D"
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "visualInteractions": [
+    {
+      "source": "chartPareto",
+      "target": "cardGrandPct",
+      "type": "NoFilter"
+    },
+    {
+      "source": "chartPareto",
+      "target": "cardPhrase",
+      "type": "NoFilter"
+    },
+    {
+      "source": "chartPareto",
+      "target": "cardBandeau",
+      "type": "NoFilter"
+    },
+    {
+      "source": "tblDetail",
+      "target": "chartPareto",
+      "type": "NoFilter"
+    },
+    {
+      "source": "tblDetail",
+      "target": "cardGrandPct",
+      "type": "NoFilter"
+    },
+    {
+      "source": "tblDetail",
+      "target": "cardPhrase",
+      "type": "NoFilter"
+    },
+    {
+      "source": "tblDetail",
+      "target": "cardBandeau",
+      "type": "NoFilter"
+    }
+  ]
+}
